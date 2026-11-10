@@ -1,13 +1,256 @@
 sub init()
     m.video = m.top.findNode("video")
+    m.dashboard = m.top.findNode("dashboard")
+    m.osd = m.top.findNode("osd")
+    m.osdStatus = m.top.findNode("osdStatus")
+    m.osdTime = m.top.findNode("osdTime")
+    m.osdTimer = m.top.findNode("osdTimer")
+
+    m.subtitleGroup = m.top.findNode("subtitleGroup")
+    m.subtitleLabel = m.top.findNode("subtitleLabel")
+    m.subtitleShadow = m.top.findNode("subtitleShadow")
+    m.subSyncOSD = m.top.findNode("subSyncOSD")
+    m.subSyncLabel = m.top.findNode("subSyncLabel")
+    m.subSyncTimer = m.top.findNode("subSyncTimer")
+    m.subtitleTimer = m.top.findNode("subtitleTimer")
+
+    m.subtitleCues = []
+    m.subtitleOffset = 0.0
+    m.subtitleTask = invalid
+
+    m.video.observeField("state", "onVideoStateChange")
+    m.osdTimer.observeField("fire", "hideOSD")
+    m.subSyncTimer.observeField("fire", "hideSubSyncOSD")
+    m.subtitleTimer.observeField("fire", "onSubtitleTimerFire")
+
+    ' Default focus on scene for key events
+    m.top.setFocus(true)
 end sub
 
 sub onArgs()
     a = m.top.args
+    if a = invalid or not a.DoesExist("{{.ParamURL}}") or a["{{.ParamURL}}"] = "" then
+        ' No stream specified: keep dashboard visible
+        m.dashboard.visible = true
+        m.video.visible = false
+        m.subtitleGroup.visible = false
+        m.top.setFocus(true)
+        return
+    end if
+
+    url = a["{{.ParamURL}}"]
+    format = a["{{.ParamFormat}}"]
+
     content = CreateObject("roSGNode", "ContentNode")
-    content.url = a["{{.ParamURL}}"]
-    content.streamFormat = a["{{.ParamFormat}}"]
+    content.url = url
+    content.streamFormat = format
+    content.live = false
+
+    ' Reset subtitle state
+    m.subtitleCues = []
+    m.subtitleOffset = 0.0
+    m.subtitleTimer.control = "stop"
+    m.subtitleLabel.text = ""
+    m.subtitleShadow.text = ""
+    m.subtitleGroup.visible = false
+
+    if a.DoesExist("{{.ParamSubOffset}}") and a["{{.ParamSubOffset}}"] <> ""
+        m.subtitleOffset = Val(a["{{.ParamSubOffset}}"])
+    end if
+
+    if a.DoesExist("{{.ParamSubtitles}}") and a["{{.ParamSubtitles}}"] <> ""
+        subUrl = a["{{.ParamSubtitles}}"]
+        content.SubtitleTracks = [
+            {
+                TrackName: subUrl,
+                Language: "en",
+                Description: "English"
+            }
+        ]
+        ' Launch background task to fetch & parse subtitles for custom rendering and live offset sync
+        m.subtitleTask = CreateObject("roSGNode", "SubtitleTask")
+        m.subtitleTask.observeField("cues", "onSubtitlesLoaded")
+        m.subtitleTask.url = subUrl
+        m.subtitleTask.control = "RUN"
+    end if
+
+    m.dashboard.visible = false
+    m.video.visible = true
     m.video.content = content
     m.video.control = "play"
-    m.video.setFocus(true)
+    m.top.setFocus(true)
+
+    showOSD("Starting Playback")
 end sub
+
+sub onSubtitlesLoaded()
+    if m.subtitleTask <> invalid and m.subtitleTask.cues <> invalid
+        m.subtitleCues = m.subtitleTask.cues
+        if m.subtitleCues.Count() > 0
+            m.subtitleTimer.control = "start"
+        end if
+    end if
+end sub
+
+sub onSubtitleTimerFire()
+    if m.video = invalid or m.video.state <> "playing" or m.subtitleCues = invalid or m.subtitleCues.Count() = 0
+        return
+    end if
+
+    curPos = m.video.position + m.subtitleOffset
+    foundText = ""
+    for each cue in m.subtitleCues
+        if curPos >= cue.start and curPos <= cue.endPos
+            foundText = cue.text
+            exit for
+        end if
+    end for
+
+    if foundText <> ""
+        if m.subtitleLabel.text <> foundText
+            m.subtitleLabel.text = foundText
+            m.subtitleShadow.text = foundText
+        end if
+        m.subtitleGroup.visible = true
+    else
+        if m.subtitleGroup.visible = true
+            m.subtitleLabel.text = ""
+            m.subtitleShadow.text = ""
+            m.subtitleGroup.visible = false
+        end if
+    end if
+end sub
+
+sub onVideoStateChange()
+    if m.video = invalid then return
+    state = m.video.state
+    if state = "finished" or state = "stopped" or state = "error"
+        m.video.visible = false
+        m.osd.visible = false
+        m.subtitleGroup.visible = false
+        m.subSyncOSD.visible = false
+        m.subtitleTimer.control = "stop"
+        m.dashboard.visible = true
+        m.top.setFocus(true)
+    else if state = "playing"
+        showOSD("Playing")
+        if m.subtitleCues <> invalid and m.subtitleCues.Count() > 0
+            m.subtitleTimer.control = "start"
+        end if
+    else if state = "paused"
+        showOSD("Paused")
+    end if
+end sub
+
+function formatTime(totalSeconds as Integer) as String
+    if totalSeconds < 0 then totalSeconds = 0
+    mins = Int(totalSeconds / 60)
+    secs = totalSeconds MOD 60
+    secsStr = secs.ToStr()
+    if Len(secsStr) = 1 then secsStr = "0" + secsStr
+    minsStr = mins.ToStr()
+    if Len(minsStr) = 1 then minsStr = "0" + minsStr
+    return minsStr + ":" + secsStr
+end function
+
+sub showOSD(statusText as String)
+    if m.osd = invalid then return
+    m.osdStatus.text = statusText
+    if m.video <> invalid and m.video.duration > 0
+        posStr = formatTime(Int(m.video.position))
+        durStr = formatTime(Int(m.video.duration))
+        m.osdTime.text = posStr + " / " + durStr
+    else if m.video <> invalid and m.video.position > 0
+        posStr = formatTime(Int(m.video.position))
+        m.osdTime.text = posStr
+    else
+        m.osdTime.text = ""
+    end if
+
+    m.osd.visible = true
+    m.osdTimer.control = "stop"
+    m.osdTimer.control = "start"
+end sub
+
+sub hideOSD()
+    if m.osd <> invalid then m.osd.visible = false
+end sub
+
+sub showSubSyncOSD()
+    if m.subSyncOSD = invalid then return
+    offsetStr = ""
+    if m.subtitleOffset > 0
+        offsetStr = "+" + Str(m.subtitleOffset).Trim() + "s"
+    else if m.subtitleOffset < 0
+        offsetStr = Str(m.subtitleOffset).Trim() + "s"
+    else
+        offsetStr = "0.0s (In Sync)"
+    end if
+    m.subSyncLabel.text = "Sub Sync: " + offsetStr
+    m.subSyncOSD.visible = true
+    m.subSyncTimer.control = "stop"
+    m.subSyncTimer.control = "start"
+end sub
+
+sub hideSubSyncOSD()
+    if m.subSyncOSD <> invalid then m.subSyncOSD.visible = false
+end sub
+
+function onKeyEvent(key as String, press as Boolean) as Boolean
+    handled = false
+    if not press then return false
+
+    ' If video is active
+    if m.video <> invalid and m.video.visible = true
+        if key = "fastforward" or key = "right"
+            curPos = m.video.position
+            targetPos = curPos + 15
+            if m.video.duration > 0 and targetPos > m.video.duration
+                targetPos = m.video.duration - 1
+            end if
+            m.video.seek = targetPos
+            showOSD(">> +15s (" + formatTime(Int(targetPos)) + ")")
+            handled = true
+        else if key = "rewind" or key = "left" or key = "replay"
+            curPos = m.video.position
+            targetPos = curPos - 15
+            if targetPos < 0 then targetPos = 0
+            m.video.seek = targetPos
+            showOSD("<< -15s (" + formatTime(Int(targetPos)) + ")")
+            handled = true
+        else if key = "play" or key = "pause" or key = "OK" or key = "select"
+            if m.video.state = "paused"
+                m.video.control = "resume"
+                showOSD("Playing")
+            else
+                m.video.control = "pause"
+                showOSD("Paused")
+            end if
+            handled = true
+        else if key = "up"
+            m.subtitleOffset = m.subtitleOffset + 0.5
+            showSubSyncOSD()
+            handled = true
+        else if key = "down"
+            m.subtitleOffset = m.subtitleOffset - 0.5
+            showSubSyncOSD()
+            handled = true
+        else if key = "options" or key = "info"
+            showOSD("Castor")
+            handled = true
+        else if key = "back"
+            ' Stop video and return to Dashboard
+            m.video.control = "stop"
+            m.video.visible = false
+            m.osd.visible = false
+            m.subtitleGroup.visible = false
+            m.subSyncOSD.visible = false
+            m.subtitleTimer.control = "stop"
+            m.dashboard.visible = true
+            m.top.setFocus(true)
+            handled = true
+        end if
+    end if
+
+    return handled
+end function

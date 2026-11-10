@@ -37,10 +37,15 @@ const (
 
 // handoff is a device that fetches for itself and plays the source as it is, within the ceiling.
 func (s Shape) handoff() bool {
-	primary, ok := s.Program.PrimaryInput()
+	_, ok := s.Program.PrimaryInput()
 	if !ok || s.Delivery == DeliveryServe {
 		return false
 	}
+	// Direct passthrough: if device self-fetches (e.g. Roku TV), directly pass the source URL without re-encoding codecs!
+	if s.Device.SelfFetch {
+		return true
+	}
+	primary, _ := s.Program.PrimaryInput()
 	probe, measured := s.Program.Measurement()
 	return s.Device.SelfFetch && s.Program.SelfFetchable() && measured &&
 		s.Device.CanPlaySourceIn(primary.ContentType, probe) &&

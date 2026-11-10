@@ -1,3 +1,5 @@
+//go:build cgo
+
 package whisper
 
 // Routes whisper logging to slog; filters noise.

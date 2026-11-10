@@ -34,8 +34,9 @@ const (
 
 // Config is the operator's Roku settings: a published channel to launch, or the developer password to sideload castor's.
 type Config struct {
-	AppID    string `yaml:"app_id"`
-	Password string `yaml:"password"`
+	AppID    string   `yaml:"app_id"`
+	Password string   `yaml:"password"`
+	Hosts    []string `yaml:"hosts"`
 }
 
 // Family is the Roku ECP strategy, built with the operator's Roku settings.
@@ -51,16 +52,46 @@ func (Family) Type() device.Type { return familyType }
 var _ device.Family = Family{}
 
 // Discover finds Rokus over SSDP, naming each once however often it answered.
-func (Family) Discover(ctx context.Context) []device.Info {
+func (f Family) Discover(ctx context.Context) []device.Info {
 	hc, err := httpu.NewHTTPUClient()
 	if err != nil {
 		slog.WarnContext(ctx, "roku discovery", "error", err)
 		return nil
 	}
 	defer hc.Close()
-	return discover(ctx, func(searchCtx context.Context) ([]*http.Response, error) {
+	devices := discover(ctx, func(searchCtx context.Context) ([]*http.Response, error) {
 		return ssdp.RawSearch(searchCtx, hc, searchTarget, discoverySends)
 	}, &http.Client{Timeout: httpTimeout})
+
+	for _, host := range f.Config.Hosts {
+		if host == "" {
+			continue
+		}
+		loc, err := url.Parse("http://" + device.WithPort(host, ecpPort))
+		if err != nil {
+			continue
+		}
+		alreadyFound := false
+		for _, d := range devices {
+			if strings.Contains(d.Address, host) {
+				alreadyFound = true
+				break
+			}
+		}
+		if !alreadyFound {
+			client := &http.Client{Timeout: 2 * time.Second}
+			name := deviceName(ctx, client, loc)
+			if name != "" {
+				devices = append(devices, device.Info{
+					ID:      host,
+					Name:    name,
+					Type:    familyType,
+					Address: loc.String(),
+				})
+			}
+		}
+	}
+	return devices
 }
 
 // discover keeps SSDP's wait separate from the name lookups. RawSearch normally

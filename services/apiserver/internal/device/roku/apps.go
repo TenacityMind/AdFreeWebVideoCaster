@@ -16,14 +16,13 @@ func (s *session) ensureChannel(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("querying roku apps: %w", err)
 	}
-	if cfg.Password == "" {
-		if i := slices.IndexFunc(apps, func(a app) bool { return a.ID == devAppID }); i >= 0 {
-			if strings.TrimSpace(apps[i].Title) == channelTitle {
-				return nil
-			}
-			return errors.New("a different sideloaded channel occupies the Roku dev slot; set servers.api.devices.roku.password so Castor can replace it")
+	if i := slices.IndexFunc(apps, func(a app) bool { return a.ID == devAppID }); i >= 0 {
+		if strings.TrimSpace(apps[i].Title) == channelTitle {
+			return nil
 		}
-		return errors.New("roku channel not installed and no developer password set: enable Developer Mode on the Roku, set a web-server password, and put it in servers.api.devices.roku.password")
+	}
+	if cfg.Password == "" {
+		return errors.New("a different sideloaded channel occupies the Roku dev slot; set servers.api.devices.roku.password so Castor can replace it")
 	}
 	slog.InfoContext(ctx, "sideloading roku channel", "host", s.ecp.Hostname())
 	return s.sideloadChannel(ctx, cfg.Password)

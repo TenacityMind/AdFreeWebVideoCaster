@@ -35,6 +35,6 @@ func H264Support() *mediav1.VideoSupport {
 			mediav1.H264Support_PROFILE_MAIN,
 			mediav1.H264Support_PROFILE_HIGH,
 		},
-		MaxLevel: 42,
+		MaxLevel: 52,
 	}}}
 }

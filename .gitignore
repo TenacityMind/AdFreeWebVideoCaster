@@ -7,6 +7,8 @@ config.local.yaml
 
 # Built castor binaries (produced by `make build`)
 /castor
+bin/
+logs/
 
 # whisper.cpp cmake artifacts (`make lib`)
 third_party/whisper.cpp/build_*/

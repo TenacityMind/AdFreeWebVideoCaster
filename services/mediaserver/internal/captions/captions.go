@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,11 +16,17 @@ import (
 // Matches returns published captions in preference order, including alternative tracks
 // in the same language so a broken track does not hide another usable one.
 func Matches(available []source.Caption, languages []string) []source.Caption {
+	if len(available) == 0 {
+		return nil
+	}
+	if len(languages) == 0 {
+		return slices.Clone(available)
+	}
 	var matches []source.Caption
 	seen := make([]bool, len(available))
 	for _, language := range languages {
 		for i, c := range available {
-			if !seen[i] && source.SameLanguage(c.Language, language) {
+			if !seen[i] && (c.Language == "" || source.SameLanguage(c.Language, language)) {
 				matches = append(matches, c)
 				seen[i] = true
 			}
@@ -70,6 +77,9 @@ func FetchAt(ctx context.Context, client source.Client, c source.Caption, header
 	var pieces []string
 	if documentHeader(body, "WEBVTT") {
 		pieces = []string{body}
+	} else if isSRT(body) {
+		// SRT (SubRip) format: prefix with WEBVTT header so the segment parser processes its cues
+		pieces = []string{"WEBVTT\n\n" + body}
 	} else {
 		if !documentHeader(body, "#EXTM3U") {
 			return "", fmt.Errorf("caption document is neither WebVTT nor HLS")
@@ -129,4 +139,12 @@ func FetchAt(ctx context.Context, client source.Client, c source.Caption, header
 		return "", fmt.Errorf("captions contain no usable cues")
 	}
 	return merged, nil
+}
+
+func isSRT(body string) bool {
+	body = strings.TrimPrefix(strings.TrimSpace(body), bom)
+	if strings.HasPrefix(body, "WEBVTT") || strings.HasPrefix(body, "#") {
+		return false
+	}
+	return strings.Contains(body, "-->")
 }

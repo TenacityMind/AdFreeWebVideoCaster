@@ -13,8 +13,10 @@ import (
 
 // Launch parameter names the channel reads and the launcher must send.
 const (
-	paramURL    = "url"
-	paramFormat = "format"
+	paramURL       = "url"
+	paramFormat    = "format"
+	paramSubtitles = "subtitles"
+	paramSubOffset = "sub_offset"
 )
 
 const channelTitle = "Castor"
@@ -23,10 +25,12 @@ const channelTitle = "Castor"
 var channelAssets embed.FS
 
 var channelData = struct {
-	Title       string
-	ParamURL    string
-	ParamFormat string
-}{channelTitle, paramURL, paramFormat}
+	Title          string
+	ParamURL       string
+	ParamFormat    string
+	ParamSubtitles string
+	ParamSubOffset string
+}{channelTitle, paramURL, paramFormat, paramSubtitles, paramSubOffset}
 
 // channelZip packs the rendered channel into a sideload archive with the manifest at the root.
 func channelZip() ([]byte, error) {

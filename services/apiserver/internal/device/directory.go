@@ -224,5 +224,18 @@ func (d *Directory) lookup(id string) (Info, bool) {
 	defer d.mu.Unlock()
 	d.seen.prune(time.Now())
 	observed, ok := d.seen[id]
-	return observed.info, ok
+	if ok {
+		return observed.info, true
+	}
+	cleanID := strings.TrimPrefix(id, "roku:")
+	for _, obs := range d.seen {
+		if obs.info.id() == id || obs.info.ID == id || obs.info.ID == cleanID {
+			return obs.info, true
+		}
+		if cleanID != "" && strings.Contains(obs.info.Address, cleanID) {
+			return obs.info, true
+		}
+	}
+	return Info{}, false
 }
+

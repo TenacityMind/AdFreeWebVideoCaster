@@ -2,6 +2,7 @@
 package main
 
 import (
+	"os"
 	"slices"
 
 	"github.com/urfave/cli/v3"
@@ -11,6 +12,17 @@ import (
 	"github.com/stupside/castor/services/mediaserver"
 	"github.com/stupside/castor/services/scrapingserver"
 )
+
+func init() {
+	if os.Getenv("SSL_CERT_FILE") == "" {
+		for _, path := range []string{"/private/etc/ssl/cert.pem", "/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt"} {
+			if _, err := os.Stat(path); err == nil {
+				os.Setenv("SSL_CERT_FILE", path)
+				break
+			}
+		}
+	}
+}
 
 func main() {
 	local := Local(apiserver.Embedded(mediaserver.Embedded, scrapingserver.Embedded))

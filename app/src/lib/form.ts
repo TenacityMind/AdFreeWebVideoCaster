@@ -16,6 +16,12 @@ export function fromForm<Desc extends DescMessage>(
     const value = String(entry).trim();
     if (value) put(json, schema, path.split("."), value);
   }
+  const stream = (json as any)?.source?.stream;
+  if (Array.isArray(stream?.captions)) {
+    stream.captions = stream.captions.filter(
+      (c: any) => c && typeof c.url === "string" && c.url.trim() !== "",
+    );
+  }
   return fromJson(schema, json);
 }
 
@@ -36,6 +42,21 @@ function put(
       )
     )
       object(into, value);
+    return;
+  }
+  if (field?.fieldKind === "list" && field.listKind === "message") {
+    const list = Array.isArray(json[name]) ? (json[name] as JsonObject[]) : [];
+    json[name] = list;
+    if (rest.length === 0) {
+      list.push({ url: value });
+    } else {
+      let target = list[0];
+      if (!target) {
+        target = {};
+        list.push(target);
+      }
+      put(target, field.message, rest, value);
+    }
     return;
   }
   if (!field || rest.length) return;

@@ -375,6 +375,10 @@ function Controls({
           <Kbd>←</Kbd>
           <Kbd>→</Kbd> 10 seconds
         </span>
+        <span sx={styles.key}>
+          <Kbd>↑</Kbd>
+          <Kbd>↓</Kbd> Subtitle sync (+/- 0.5s on TV remote)
+        </span>
       </p>
     </Stack>
   );

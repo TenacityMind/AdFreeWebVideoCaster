@@ -4,7 +4,50 @@
     <field id="args" type="assocarray" onChange="onArgs" />
   </interface>
   <children>
-    <Video id="video" width="1920" height="1080" />
+    <!-- Background for Dashboard -->
+    <Rectangle id="bg" width="1920" height="1080" color="0x0c0f17FF" />
+
+    <!-- Dashboard UI (Shown when idle) -->
+    <Group id="dashboard" visible="true">
+      <Poster id="logo" uri="pkg:/images/icon_focus_fhd.png" width="280" height="210" translation="[820, 140]" />
+      <Label text="AdFree Web Video Caster" horizAlign="center" width="1920" translation="[0, 370]" font="font:LargeBoldSystemFont" color="0x38bdf8FF" />
+      <Label id="statusLabel" text="● Ready to Cast" horizAlign="center" width="1920" translation="[0, 435]" font="font:MediumBoldSystemFont" color="0x4ade80FF" />
+
+      <!-- Instruction Card -->
+      <Rectangle width="840" height="260" translation="[540, 510]" color="0x1e293bEE">
+        <Label text="1. Open http://localhost:3000 on your Mac or phone&#xA;2. Paste any video web page or media link&#xA;3. Click Cast to stream directly to this TV without ads" horizAlign="center" width="800" height="160" translation="[20, 30]" font="font:MediumSystemFont" color="0xe2e8f0FF" wrap="true" />
+        <Label id="deviceInfo" text="AdFree Web Video Caster • Ready to Cast" horizAlign="center" width="800" translation="[20, 195]" font="font:SmallSystemFont" color="0x94a3b8FF" />
+      </Rectangle>
+    </Group>
+
+    <!-- Video Player (Fullscreen) -->
+    <Video id="video" width="1920" height="1080" visible="false" />
+
+    <!-- Subtitle Overlay (Bottom Center) -->
+    <Group id="subtitleGroup" visible="false">
+      <Label id="subtitleShadow" text="" horizAlign="center" vertAlign="bottom" width="1600" height="160" translation="[162, 852]" font="font:LargeBoldSystemFont" color="0x000000FF" wrap="true" maxLines="3" />
+      <Label id="subtitleLabel" text="" horizAlign="center" vertAlign="bottom" width="1600" height="160" translation="[160, 850]" font="font:LargeBoldSystemFont" color="0xffffffff" wrap="true" maxLines="3" />
+    </Group>
+
+    <!-- Subtitle Sync OSD Toast (shown when Up/Down pressed) -->
+    <Group id="subSyncOSD" visible="false">
+      <Rectangle width="360" height="54" translation="[780, 70]" color="0x0f172aEE">
+        <Label id="subSyncLabel" text="Sub Sync: 0.0s" horizAlign="center" vertAlign="center" width="360" height="54" translation="[0, 0]" font="font:MediumBoldSystemFont" color="0x38bdf8FF" />
+      </Rectangle>
+    </Group>
+    <Timer id="subSyncTimer" repeat="false" duration="2" />
+
+    <!-- Subtitle position timer (checks every 250ms to update subtitle display) -->
+    <Timer id="subtitleTimer" repeat="true" duration="0.25" />
+
+    <!-- On Screen Display (Transport Controls Feedback) -->
+    <Group id="osd" visible="false">
+      <Rectangle width="1920" height="120" translation="[0, 960]" color="0x000000CC" />
+      <Label id="osdStatus" text="Playing" translation="[80, 995]" font="font:LargeBoldSystemFont" color="0x38bdf8FF" />
+      <Label id="osdTime" text="00:00 / 00:00" translation="[1480, 1000]" font="font:MediumSystemFont" color="0xffffffff" horizAlign="right" width="360" />
+    </Group>
+
+    <Timer id="osdTimer" repeat="false" duration="3" />
   </children>
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
 </component>

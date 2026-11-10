@@ -58,6 +58,9 @@ func (s *session) Play(ctx context.Context, playback device.Playback) error {
 	q := url.Values{}
 	q.Set(paramURL, playback.URL.String())
 	q.Set(paramFormat, format)
+	if captions := playback.Play.GetCaptions(); len(captions) > 0 {
+		q.Set(paramSubtitles, captions[0].GetUrl())
+	}
 
 	u := s.ecp.JoinPath("launch", s.appID)
 	u.RawQuery = q.Encode()
@@ -196,11 +199,23 @@ func (s *session) AwaitEnd(ctx context.Context) error {
 // Capabilities describes what Castor's channel plays.
 func (s *session) Capabilities() *mediav1.Capabilities {
 	caps := &mediav1.Capabilities{Provenance: "Castor Roku channel defaults; model/firmware limits unverified", SelfFetch: true}
+	captionFormats := []mediav1.CaptionFormat{
+		mediav1.CaptionFormat_CAPTION_FORMAT_VTT,
+		mediav1.CaptionFormat_CAPTION_FORMAT_SRT,
+	}
 	for _, audio := range []mediav1.AudioCodec{mediav1.AudioCodec_AUDIO_CODEC_AAC, mediav1.AudioCodec_AUDIO_CODEC_AC3, mediav1.AudioCodec_AUDIO_CODEC_EAC3} {
-		tracks := &mediav1.FormatSupport_Av{Av: &mediav1.AVSupport{Video: device.H264Support(), Audio: &mediav1.AudioSupport{Codec: audio, MaxChannels: 6}}}
-		caps.Formats = append(caps.Formats, &mediav1.FormatSupport{Transport: &mediav1.FormatSupport_Hls{Hls: &mediav1.HLSSupport{}}, Tracks: tracks})
+		tracks := &mediav1.FormatSupport_Av{Av: &mediav1.AVSupport{Video: device.H264Support(), Audio: &mediav1.AudioSupport{Codec: audio, MaxChannels: 2}}}
+		caps.Formats = append(caps.Formats, &mediav1.FormatSupport{
+			Transport: &mediav1.FormatSupport_Hls{Hls: &mediav1.HLSSupport{}},
+			Tracks:    tracks,
+			Captions:  captionFormats,
+		})
 		for _, container := range []mediav1.ProgressiveSupport_Container{mediav1.ProgressiveSupport_CONTAINER_MP4, mediav1.ProgressiveSupport_CONTAINER_MKV} {
-			caps.Formats = append(caps.Formats, &mediav1.FormatSupport{Transport: &mediav1.FormatSupport_Progressive{Progressive: &mediav1.ProgressiveSupport{Container: container}}, Tracks: tracks})
+			caps.Formats = append(caps.Formats, &mediav1.FormatSupport{
+				Transport: &mediav1.FormatSupport_Progressive{Progressive: &mediav1.ProgressiveSupport{Container: container}},
+				Tracks:    tracks,
+				Captions:  captionFormats,
+			})
 		}
 	}
 	return caps

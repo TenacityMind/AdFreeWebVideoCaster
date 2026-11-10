@@ -53,7 +53,7 @@ func (s *preparation) shownCaptions() []media.Caption {
 func (s *preparation) fetchCaption() *fetchedCaption {
 	want := s.Captions
 	published := s.attempt.Rendition.Captions
-	if want == nil || len(published) == 0 {
+	if len(published) == 0 {
 		return nil
 	}
 	format, ok := captionFormat(s.capabilities)
@@ -61,9 +61,16 @@ func (s *preparation) fetchCaption() *fetchedCaption {
 		slog.InfoContext(s.ctx, "the source publishes captions, but the device shows none")
 		return nil
 	}
-	matches := captions.Matches(published, want.Languages)
+	var languages []string
+	if want != nil {
+		languages = want.Languages
+	}
+	matches := captions.Matches(published, languages)
 	if len(matches) == 0 {
 		slog.InfoContext(s.ctx, "the source publishes no caption in the language asked", "published", len(published))
+		return nil
+	}
+	if want == nil || want.Client == nil {
 		return nil
 	}
 	primary, _ := s.attempt.Program.PrimaryInput()

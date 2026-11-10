@@ -80,6 +80,11 @@ func inspect(ctx context.Context, env source.Env, stream source.Stream, origin s
 	}
 	languages := env.AudioLanguages
 	origin.Renditions = ladder(doc, stream.Probe, languages...)
+	if len(stream.Captions) > 0 {
+		for i := range origin.Renditions {
+			origin.Renditions[i].Captions = append(origin.Renditions[i].Captions, stream.Captions...)
+		}
+	}
 	if env.MaxHeight > 0 && probeRendition != nil {
 		for i := range origin.Renditions {
 			rung := &origin.Renditions[i]

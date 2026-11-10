@@ -2,7 +2,7 @@
 
 import * as stylex from "@stylexjs/stylex";
 import { useSearchParams } from "next/navigation";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Button } from "@/components/button";
 import { Card } from "@/components/card";
 import { Choice, Field, Input, Segmented, Switch } from "@/components/field";
@@ -96,15 +96,23 @@ export function CastForm() {
   const values = state.values ?? {};
   const named = (name: string) => ({ name, defaultValue: values[name] });
   const { devices, error } = useDevices();
-  // A device id, or "pinned" for an address discovery can't see.
   const [target, setTarget] = useState(useSearchParams().get("device") ?? "");
-  if (target === "" && devices?.length === 1) setTarget(devices[0].id);
+  useEffect(() => {
+    if (devices && devices.length > 0) {
+      if (!target || (target !== "pinned" && !devices.some((d) => d.id === target))) {
+        setTarget(devices[0].id);
+      }
+    }
+  }, [devices, target]);
   const [kind, setKind] = useState<(typeof kinds)[number]["value"]>(
     kinds.find((k) => values[k.name])?.value ?? "pages",
   );
   const link = kinds.find((k) => k.value === kind) ?? kinds[0];
   const [subtitles, setSubtitles] = useState(
     values["preferences.subtitles"] ?? "",
+  );
+  const [customSubtitle, setCustomSubtitle] = useState(
+    values["source.stream.captions.url"] ?? "",
   );
   const pinned = target === "pinned";
 
@@ -122,7 +130,7 @@ export function CastForm() {
             {devices?.map((device) => (
               <Choice
                 key={device.id}
-                name="target.deviceId"
+                name="_device_radio"
                 value={device.id}
                 checked={target === device.id}
                 onChange={() => setTarget(device.id)}
@@ -132,8 +140,8 @@ export function CastForm() {
               />
             ))}
             <Choice
-              name="target.deviceId"
-              value=""
+              name="_device_radio"
+              value="pinned"
               checked={pinned}
               onChange={() => setTarget("pinned")}
               leading={<Icon name="plus" />}
@@ -141,11 +149,23 @@ export function CastForm() {
               meta="A device discovery can’t see"
             />
           </div>
+          {!pinned && (
+            <input
+              type="hidden"
+              name="target.deviceId"
+              value={
+                target && target !== "pinned"
+                  ? target
+                  : (devices?.[0]?.id ?? "")
+              }
+            />
+          )}
           {pinned && (
             <div sx={styles.pair}>
               <Field label="Type">
                 <Select
                   options={pinnedTypes}
+                  defaultValue={DeviceTypeSchema.value[DeviceType.ROKU].name}
                   {...named("target.pinned.type")}
                 />
               </Field>
@@ -183,6 +203,31 @@ export function CastForm() {
               placeholder="https://"
             />
           </Field>
+          {kind === "stream" && (
+            <>
+              <Field
+                label="Custom Subtitles (Optional)"
+                hint="Direct URL to a WebVTT (.vtt) or SubRip (.srt) subtitle file."
+              >
+                <Input
+                  {...named("source.stream.captions.url")}
+                  value={customSubtitle}
+                  onChange={(e) => setCustomSubtitle(e.target.value)}
+                  type="url"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="https://.../subtitles.srt"
+                />
+              </Field>
+              {customSubtitle.trim() !== "" && (
+                <input
+                  type="hidden"
+                  name="source.stream.captions.language"
+                  value="en"
+                />
+              )}
+            </>
+          )}
         </Stack>
       </Card>
 
