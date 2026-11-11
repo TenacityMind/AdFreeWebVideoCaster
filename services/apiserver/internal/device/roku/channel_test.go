@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -28,5 +29,15 @@ func TestTheChannelZipRendersTheChannel(t *testing.T) {
 	}
 	if files["manifest"] == "" {
 		t.Error("manifest missing from the archive root")
+	}
+	if files["components/MainScene.xml"] == "" {
+		t.Error("components/MainScene.xml missing from archive")
+	}
+	brs := files["components/MainScene.brs"]
+	if brs == "" {
+		t.Error("components/MainScene.brs missing from archive")
+	}
+	if strings.Contains(brs, "{{") || strings.Contains(brs, "}}") {
+		t.Errorf("unrendered template markers found in MainScene.brs")
 	}
 }

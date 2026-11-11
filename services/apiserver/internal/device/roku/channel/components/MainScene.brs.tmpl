@@ -1,29 +1,75 @@
 sub init()
     m.video = m.top.findNode("video")
     m.dashboard = m.top.findNode("dashboard")
-    m.osd = m.top.findNode("osd")
-    m.osdStatus = m.top.findNode("osdStatus")
-    m.osdTime = m.top.findNode("osdTime")
-    m.osdTimer = m.top.findNode("osdTimer")
 
     m.subtitleGroup = m.top.findNode("subtitleGroup")
     m.subtitleLabel = m.top.findNode("subtitleLabel")
     m.subtitleShadow = m.top.findNode("subtitleShadow")
-    m.subSyncOSD = m.top.findNode("subSyncOSD")
-    m.subSyncLabel = m.top.findNode("subSyncLabel")
-    m.subSyncTimer = m.top.findNode("subSyncTimer")
     m.subtitleTimer = m.top.findNode("subtitleTimer")
 
+    m.deckGroup = m.top.findNode("deckGroup")
+    m.deckTitle = m.top.findNode("deckTitle")
+    m.deckBadge = m.top.findNode("deckBadge")
+    m.deckTime = m.top.findNode("deckTime")
+    m.progressBarFill = m.top.findNode("progressBarFill")
+    m.progressDot = m.top.findNode("progressDot")
+
+    m.card0Bg = m.top.findNode("card0Bg")
+    m.card0Label = m.top.findNode("card0Label")
+    m.card1Bg = m.top.findNode("card1Bg")
+    m.card1Label = m.top.findNode("card1Label")
+    m.card2Bg = m.top.findNode("card2Bg")
+    m.card2Label = m.top.findNode("card2Label")
+
+    m.subPanelGroup = m.top.findNode("subPanelGroup")
+    m.subRow0Bg = m.top.findNode("subRow0Bg")
+    m.subRow0Val = m.top.findNode("subRow0Val")
+    m.subRow1Bg = m.top.findNode("subRow1Bg")
+    m.subRow1Val = m.top.findNode("subRow1Val")
+    m.subRow2Bg = m.top.findNode("subRow2Bg")
+    m.subRow2Val = m.top.findNode("subRow2Val")
+    m.subRow3Bg = m.top.findNode("subRow3Bg")
+    m.subRow3Val = m.top.findNode("subRow3Val")
+    m.subRow4Bg = m.top.findNode("subRow4Bg")
+    m.subRow4Val = m.top.findNode("subRow4Val")
+    m.subRow5Bg = m.top.findNode("subRow5Bg")
+    m.subRow5Val = m.top.findNode("subRow5Val")
+
+    m.osdToast = m.top.findNode("osdToast")
+    m.osdToastLabel = m.top.findNode("osdToastLabel")
+    m.osdToastTimer = m.top.findNode("osdToastTimer")
+
+    ' UI States
+    m.STATE_PLAYING = 0
+    m.STATE_DECK = 1
+    m.STATE_SUB_PANEL = 2
+    m.currentState = m.STATE_PLAYING
+
+    ' Navigation indexes
+    m.deckCardIndex = 0 ' 0=Resume, 1=Subtitles, 2=Exit
+    m.subRowIndex = 0   ' 0..5
+
+    ' Subtitle settings
     m.subtitleCues = []
     m.subtitleOffset = 0.0
     m.subtitleTask = invalid
+    m.subsEnabled = true
+    m.subSizeIndex = 1  ' 0=Normal (30pt), 1=Large (42pt - default), 2=Huge (54pt)
+    m.subColorIndex = 0 ' 0=White, 1=Yellow, 2=Sky Blue
+    m.subColors = ["0xFFFFFFFF", "0xFBBF24FF", "0x38BDF8FF"]
+    m.subColorNames = ["White", "Yellow", "Sky Blue"]
+    m.subSizeNames = ["Normal (30pt)", "Large (42pt)", "Huge (54pt)"]
+    m.subTracks = ["English [CC]", "OFF"]
+    m.subTrackIndex = 0
+    m.audioTracks = ["Track 1: Default (Stereo/Surround)"]
+    m.audioTrackIndex = 0
+    m.isShowingSample = false
 
+    ' Event observers
     m.video.observeField("state", "onVideoStateChange")
-    m.osdTimer.observeField("fire", "hideOSD")
-    m.subSyncTimer.observeField("fire", "hideSubSyncOSD")
+    m.osdToastTimer.observeField("fire", "hideToast")
     m.subtitleTimer.observeField("fire", "onSubtitleTimerFire")
 
-    ' Default focus on scene for key events
     m.top.setFocus(true)
 end sub
 
@@ -31,10 +77,7 @@ sub onArgs()
     a = m.top.args
     if a = invalid or not a.DoesExist("{{.ParamURL}}") or a["{{.ParamURL}}"] = "" then
         ' No stream specified: keep dashboard visible
-        m.dashboard.visible = true
-        m.video.visible = false
-        m.subtitleGroup.visible = false
-        m.top.setFocus(true)
+        stopVideoAndExit()
         return
     end if
 
@@ -46,13 +89,17 @@ sub onArgs()
     content.streamFormat = format
     content.live = false
 
-    ' Reset subtitle state
+    ' Reset subtitle & UI state
     m.subtitleCues = []
     m.subtitleOffset = 0.0
     m.subtitleTimer.control = "stop"
     m.subtitleLabel.text = ""
     m.subtitleShadow.text = ""
     m.subtitleGroup.visible = false
+    m.subtitleGroup.translation = [0, 0]
+    m.subTrackIndex = 0
+    m.subsEnabled = true
+    m.isShowingSample = false
 
     if a.DoesExist("{{.ParamSubOffset}}") and a["{{.ParamSubOffset}}"] <> ""
         m.subtitleOffset = Val(a["{{.ParamSubOffset}}"])
@@ -67,33 +114,44 @@ sub onArgs()
                 Description: "English"
             }
         ]
+        m.subTracks = ["English [CC]", "OFF"]
+        m.subTrackIndex = 0
         ' Launch background task to fetch & parse subtitles for custom rendering and live offset sync
         m.subtitleTask = CreateObject("roSGNode", "SubtitleTask")
         m.subtitleTask.observeField("cues", "onSubtitlesLoaded")
         m.subtitleTask.url = subUrl
         m.subtitleTask.control = "RUN"
+    else
+        m.subTracks = ["OFF"]
+        m.subTrackIndex = 0
+        m.subsEnabled = false
     end if
 
     m.dashboard.visible = false
     m.video.visible = true
     m.video.content = content
     m.video.control = "play"
+
+    m.currentState = m.STATE_PLAYING
+    m.deckGroup.visible = false
+    m.subPanelGroup.visible = false
     m.top.setFocus(true)
 
-    showOSD("Starting Playback")
+    applySubtitleStyle()
+    showToast("Starting Playback")
 end sub
 
 sub onSubtitlesLoaded()
     if m.subtitleTask <> invalid and m.subtitleTask.cues <> invalid
         m.subtitleCues = m.subtitleTask.cues
-        if m.subtitleCues.Count() > 0
+        if m.subtitleCues.Count() > 0 and m.subsEnabled
             m.subtitleTimer.control = "start"
         end if
     end if
 end sub
 
 sub onSubtitleTimerFire()
-    if m.video = invalid or m.video.state <> "playing" or m.subtitleCues = invalid or m.subtitleCues.Count() = 0
+    if m.video = invalid or m.video.state <> "playing" or not m.subsEnabled or m.subtitleCues = invalid or m.subtitleCues.Count() = 0
         return
     end if
 
@@ -111,9 +169,10 @@ sub onSubtitleTimerFire()
             m.subtitleLabel.text = foundText
             m.subtitleShadow.text = foundText
         end if
+        m.isShowingSample = false
         m.subtitleGroup.visible = true
     else
-        if m.subtitleGroup.visible = true
+        if m.subtitleGroup.visible = true and not m.isShowingSample
             m.subtitleLabel.text = ""
             m.subtitleShadow.text = ""
             m.subtitleGroup.visible = false
@@ -125,20 +184,11 @@ sub onVideoStateChange()
     if m.video = invalid then return
     state = m.video.state
     if state = "finished" or state = "stopped" or state = "error"
-        m.video.visible = false
-        m.osd.visible = false
-        m.subtitleGroup.visible = false
-        m.subSyncOSD.visible = false
-        m.subtitleTimer.control = "stop"
-        m.dashboard.visible = true
-        m.top.setFocus(true)
+        stopVideoAndExit()
     else if state = "playing"
-        showOSD("Playing")
-        if m.subtitleCues <> invalid and m.subtitleCues.Count() > 0
+        if m.subtitleCues <> invalid and m.subtitleCues.Count() > 0 and m.subsEnabled
             m.subtitleTimer.control = "start"
         end if
-    else if state = "paused"
-        showOSD("Paused")
     end if
 end sub
 
@@ -153,47 +203,285 @@ function formatTime(totalSeconds as Integer) as String
     return minsStr + ":" + secsStr
 end function
 
-sub showOSD(statusText as String)
-    if m.osd = invalid then return
-    m.osdStatus.text = statusText
-    if m.video <> invalid and m.video.duration > 0
-        posStr = formatTime(Int(m.video.position))
-        durStr = formatTime(Int(m.video.duration))
-        m.osdTime.text = posStr + " / " + durStr
-    else if m.video <> invalid and m.video.position > 0
-        posStr = formatTime(Int(m.video.position))
-        m.osdTime.text = posStr
+function formatOffset(offset as Float) as String
+    if offset > 0.0
+        return "+" + Str(offset).Trim() + "s"
+    else if offset < 0.0
+        return Str(offset).Trim() + "s"
     else
-        m.osdTime.text = ""
+        return "0.0s (In Sync)"
+    end if
+end function
+
+sub showToast(msg as String)
+    if m.osdToast = invalid then return
+    m.osdToastLabel.text = msg
+    m.osdToast.visible = true
+    m.osdToastTimer.control = "stop"
+    m.osdToastTimer.control = "start"
+end sub
+
+sub hideToast()
+    if m.osdToast <> invalid then m.osdToast.visible = false
+end sub
+
+sub showDeck()
+    if m.video = invalid then return
+    m.currentState = m.STATE_DECK
+    m.video.control = "pause"
+
+    ' Update scrubber and times
+    dur = m.video.duration
+    pos = m.video.position
+    if dur > 0
+        pct = pos / dur
+        if pct < 0.0 then pct = 0.0
+        if pct > 1.0 then pct = 1.0
+        fillWidth = Int(pct * 1760)
+        m.progressBarFill.width = fillWidth
+        m.progressDot.translation = [80 + fillWidth - 8, 851]
+        m.deckTime.text = formatTime(Int(pos)) + " / " + formatTime(Int(dur))
+    else
+        m.progressBarFill.width = 0
+        m.progressDot.translation = [72, 851]
+        m.deckTime.text = formatTime(Int(pos))
     end if
 
-    m.osd.visible = true
-    m.osdTimer.control = "stop"
-    m.osdTimer.control = "start"
+    ' Shift subtitles upward slightly while deck is open so subtitles don't overlap the deck
+    m.subtitleGroup.translation = [0, -180]
+
+    m.deckCardIndex = 0
+    updateDeckCards()
+
+    m.deckGroup.visible = true
+    m.subPanelGroup.visible = false
+    m.top.setFocus(true)
 end sub
 
-sub hideOSD()
-    if m.osd <> invalid then m.osd.visible = false
-end sub
+sub resumePlayback()
+    if m.video = invalid then return
+    m.currentState = m.STATE_PLAYING
+    m.deckGroup.visible = false
+    m.subPanelGroup.visible = false
+    m.subtitleGroup.translation = [0, 0]
 
-sub showSubSyncOSD()
-    if m.subSyncOSD = invalid then return
-    offsetStr = ""
-    if m.subtitleOffset > 0
-        offsetStr = "+" + Str(m.subtitleOffset).Trim() + "s"
-    else if m.subtitleOffset < 0
-        offsetStr = Str(m.subtitleOffset).Trim() + "s"
-    else
-        offsetStr = "0.0s (In Sync)"
+    if m.isShowingSample
+        clearSubPreview()
     end if
-    m.subSyncLabel.text = "Sub Sync: " + offsetStr
-    m.subSyncOSD.visible = true
-    m.subSyncTimer.control = "stop"
-    m.subSyncTimer.control = "start"
+
+    m.video.control = "resume"
+    showToast("> Playing")
+    m.top.setFocus(true)
 end sub
 
-sub hideSubSyncOSD()
-    if m.subSyncOSD <> invalid then m.subSyncOSD.visible = false
+sub openSubPanel()
+    m.currentState = m.STATE_SUB_PANEL
+    m.deckGroup.visible = false
+    m.subPanelGroup.visible = true
+    m.subRowIndex = 0
+
+    ' Refresh audio tracks from video if available
+    if m.video <> invalid and m.video.availableAudioTracks <> invalid and m.video.availableAudioTracks.Count() > 0
+        tracks = []
+        for i = 0 to m.video.availableAudioTracks.Count() - 1
+            t = m.video.availableAudioTracks[i]
+            desc = "Track " + (i + 1).ToStr()
+            if t.DoesExist("Language") and t.Language <> ""
+                desc = desc + " [" + t.Language + "]"
+            end if
+            if t.DoesExist("Description") and t.Description <> ""
+                desc = desc + " - " + t.Description
+            end if
+            tracks.Push(desc)
+        end for
+        m.audioTracks = tracks
+    end if
+
+    updateSubPanelRows()
+    updateSubPanelFocus()
+    showSubPreview()
+    m.top.setFocus(true)
+end sub
+
+sub closeSubPanel()
+    clearSubPreview()
+    m.subPanelGroup.visible = false
+    ' Return to deck
+    m.currentState = m.STATE_DECK
+    m.deckGroup.visible = true
+    updateDeckCards()
+    m.top.setFocus(true)
+end sub
+
+sub stopVideoAndExit()
+    if m.video <> invalid
+        m.video.control = "stop"
+        m.video.visible = false
+    end if
+    m.deckGroup.visible = false
+    m.subPanelGroup.visible = false
+    m.subtitleGroup.visible = false
+    m.subtitleGroup.translation = [0, 0]
+    m.osdToast.visible = false
+    m.subtitleTimer.control = "stop"
+    m.subtitleCues = []
+    m.isShowingSample = false
+    m.dashboard.visible = true
+    m.top.setFocus(true)
+end sub
+
+sub updateDeckCards()
+    if m.deckCardIndex = 0
+        m.card0Bg.color = "0x2563EBEE"
+        m.card0Label.color = "0xFFFFFFFF"
+        m.card1Bg.color = "0x1E293BEE"
+        m.card1Label.color = "0x94A3B8FF"
+        m.card2Bg.color = "0x1E293BEE"
+        m.card2Label.color = "0x94A3B8FF"
+    else if m.deckCardIndex = 1
+        m.card0Bg.color = "0x1E293BEE"
+        m.card0Label.color = "0x94A3B8FF"
+        m.card1Bg.color = "0x2563EBEE"
+        m.card1Label.color = "0xFFFFFFFF"
+        m.card2Bg.color = "0x1E293BEE"
+        m.card2Label.color = "0x94A3B8FF"
+    else
+        m.card0Bg.color = "0x1E293BEE"
+        m.card0Label.color = "0x94A3B8FF"
+        m.card1Bg.color = "0x1E293BEE"
+        m.card1Label.color = "0x94A3B8FF"
+        m.card2Bg.color = "0x2563EBEE"
+        m.card2Label.color = "0xFFFFFFFF"
+    end if
+end sub
+
+sub updateSubPanelFocus()
+    bgs = [m.subRow0Bg, m.subRow1Bg, m.subRow2Bg, m.subRow3Bg, m.subRow4Bg, m.subRow5Bg]
+    for i = 0 to 5
+        if i = m.subRowIndex
+            bgs[i].color = "0x2563EBEE"
+        else
+            bgs[i].color = "0x0F172ACC"
+        end if
+    end for
+end sub
+
+sub updateSubPanelRows()
+    ' Row 0: Track
+    if m.subTracks.Count() > 0 and m.subTrackIndex < m.subTracks.Count()
+        m.subRow0Val.text = "< " + m.subTracks[m.subTrackIndex] + " >"
+    else
+        m.subRow0Val.text = "< OFF >"
+    end if
+
+    ' Row 1: Size
+    m.subRow1Val.text = "< " + m.subSizeNames[m.subSizeIndex] + " >"
+
+    ' Row 2: Color
+    m.subRow2Val.text = "< " + m.subColorNames[m.subColorIndex] + " >"
+
+    ' Row 3: Sync
+    m.subRow3Val.text = "< " + formatOffset(m.subtitleOffset) + " >"
+
+    ' Row 4: Audio
+    if m.audioTracks.Count() > 0 and m.audioTrackIndex < m.audioTracks.Count()
+        m.subRow4Val.text = "< " + m.audioTracks[m.audioTrackIndex] + " >"
+    else
+        m.subRow4Val.text = "< Default >"
+    end if
+end sub
+
+sub adjustSetting(rowIndex as Integer, delta as Integer)
+    if rowIndex = 0
+        ' Subtitle Track
+        if m.subTracks.Count() > 1
+            m.subTrackIndex = (m.subTrackIndex + delta + m.subTracks.Count()) MOD m.subTracks.Count()
+            trackName = m.subTracks[m.subTrackIndex]
+            if trackName = "OFF"
+                m.subsEnabled = false
+                m.subtitleGroup.visible = false
+            else
+                m.subsEnabled = true
+                showSubPreview()
+            end if
+        end if
+    else if rowIndex = 1
+        ' Subtitle Size (0=Normal, 1=Large, 2=Huge)
+        count = m.subSizeNames.Count()
+        m.subSizeIndex = (m.subSizeIndex + delta + count) MOD count
+        applySubtitleStyle()
+    else if rowIndex = 2
+        ' Font Color (0=White, 1=Yellow, 2=Sky Blue)
+        count = m.subColors.Count()
+        m.subColorIndex = (m.subColorIndex + delta + count) MOD count
+        applySubtitleStyle()
+    else if rowIndex = 3
+        ' Subtitle Sync Timing (+/- 0.5s)
+        if delta > 0
+            m.subtitleOffset = m.subtitleOffset + 0.5
+        else
+            m.subtitleOffset = m.subtitleOffset - 0.5
+        end if
+    else if rowIndex = 4
+        ' Audio Track
+        if m.audioTracks.Count() > 1
+            m.audioTrackIndex = (m.audioTrackIndex + delta + m.audioTracks.Count()) MOD m.audioTracks.Count()
+            if m.video <> invalid
+                m.video.currentAudioTrack = m.audioTrackIndex
+            end if
+        end if
+    end if
+
+    updateSubPanelRows()
+end sub
+
+sub applySubtitleStyle()
+    if m.subtitleLabel = invalid or m.subtitleShadow = invalid then return
+
+    ' Color
+    m.subtitleLabel.color = m.subColors[m.subColorIndex]
+
+    ' Size
+    if m.subSizeIndex = 0
+        ' Normal (30pt)
+        m.subtitleLabel.font = "font:MediumBoldSystemFont"
+        m.subtitleShadow.font = "font:MediumBoldSystemFont"
+        m.subtitleGroup.scale = [1.0, 1.0]
+    else if m.subSizeIndex = 1
+        ' Large (42pt)
+        m.subtitleLabel.font = "font:LargeBoldSystemFont"
+        m.subtitleShadow.font = "font:LargeBoldSystemFont"
+        m.subtitleGroup.scale = [1.0, 1.0]
+    else
+        ' Huge (54pt)
+        m.subtitleLabel.font = "font:LargeBoldSystemFont"
+        m.subtitleShadow.font = "font:LargeBoldSystemFont"
+        m.subtitleGroup.scaleRotateCenter = [960, 930]
+        m.subtitleGroup.scale = [1.3, 1.3]
+    end if
+end sub
+
+sub showSubPreview()
+    if not m.subsEnabled then return
+
+    if m.subtitleLabel.text = "" or not m.subtitleGroup.visible
+        sampleText = "[ Subtitle Preview - Audio Sync " + formatOffset(m.subtitleOffset) + " ]"
+        m.subtitleLabel.text = sampleText
+        m.subtitleShadow.text = sampleText
+        m.isShowingSample = true
+    end if
+
+    applySubtitleStyle()
+    m.subtitleGroup.visible = true
+end sub
+
+sub clearSubPreview()
+    if m.isShowingSample
+        m.subtitleLabel.text = ""
+        m.subtitleShadow.text = ""
+        m.subtitleGroup.visible = false
+        m.isShowingSample = false
+    end if
 end sub
 
 function onKeyEvent(key as String, press as Boolean) as Boolean
@@ -202,54 +490,100 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
 
     ' If video is active
     if m.video <> invalid and m.video.visible = true
-        if key = "fastforward" or key = "right"
-            curPos = m.video.position
-            targetPos = curPos + 15
-            if m.video.duration > 0 and targetPos > m.video.duration
-                targetPos = m.video.duration - 1
+
+        ' STATE 0: VIDEO PLAYING (UI HIDDEN)
+        if m.currentState = m.STATE_PLAYING
+            if key = "fastforward" or key = "right"
+                curPos = m.video.position
+                targetPos = curPos + 15
+                if m.video.duration > 0 and targetPos > m.video.duration
+                    targetPos = m.video.duration - 1
+                end if
+                m.video.seek = targetPos
+                showToast(">> +15s (" + formatTime(Int(targetPos)) + ")")
+                handled = true
+            else if key = "rewind" or key = "left" or key = "replay"
+                curPos = m.video.position
+                targetPos = curPos - 15
+                if targetPos < 0 then targetPos = 0
+                m.video.seek = targetPos
+                showToast("<< -15s (" + formatTime(Int(targetPos)) + ")")
+                handled = true
+            else if key = "play" or key = "pause" or key = "OK" or key = "select" or key = "down" or key = "up"
+                showDeck()
+                handled = true
+            else if key = "back"
+                stopVideoAndExit()
+                handled = true
             end if
-            m.video.seek = targetPos
-            showOSD(">> +15s (" + formatTime(Int(targetPos)) + ")")
-            handled = true
-        else if key = "rewind" or key = "left" or key = "replay"
-            curPos = m.video.position
-            targetPos = curPos - 15
-            if targetPos < 0 then targetPos = 0
-            m.video.seek = targetPos
-            showOSD("<< -15s (" + formatTime(Int(targetPos)) + ")")
-            handled = true
-        else if key = "play" or key = "pause" or key = "OK" or key = "select"
-            if m.video.state = "paused"
-                m.video.control = "resume"
-                showOSD("Playing")
-            else
-                m.video.control = "pause"
-                showOSD("Paused")
+
+        ' STATE 1: MAIN PLAYER DECK (PAUSED)
+        else if m.currentState = m.STATE_DECK
+            if key = "left"
+                m.deckCardIndex = (m.deckCardIndex - 1 + 3) MOD 3
+                updateDeckCards()
+                handled = true
+            else if key = "right"
+                m.deckCardIndex = (m.deckCardIndex + 1) MOD 3
+                updateDeckCards()
+                handled = true
+            else if key = "play"
+                resumePlayback()
+                handled = true
+            else if key = "OK" or key = "select"
+                if m.deckCardIndex = 0
+                    resumePlayback()
+                else if m.deckCardIndex = 1
+                    openSubPanel()
+                else if m.deckCardIndex = 2
+                    stopVideoAndExit()
+                end if
+                handled = true
+            else if key = "back"
+                resumePlayback()
+                handled = true
             end if
-            handled = true
-        else if key = "up"
-            m.subtitleOffset = m.subtitleOffset + 0.5
-            showSubSyncOSD()
-            handled = true
-        else if key = "down"
-            m.subtitleOffset = m.subtitleOffset - 0.5
-            showSubSyncOSD()
-            handled = true
-        else if key = "options" or key = "info"
-            showOSD("Castor")
-            handled = true
-        else if key = "back"
-            ' Stop video and return to Dashboard
-            m.video.control = "stop"
-            m.video.visible = false
-            m.osd.visible = false
-            m.subtitleGroup.visible = false
-            m.subSyncOSD.visible = false
-            m.subtitleTimer.control = "stop"
-            m.dashboard.visible = true
-            m.top.setFocus(true)
-            handled = true
+
+        ' STATE 2: SUBTITLE & AUDIO SIDE DRAWER
+        else if m.currentState = m.STATE_SUB_PANEL
+            if key = "up"
+                m.subRowIndex = (m.subRowIndex - 1 + 6) MOD 6
+                updateSubPanelFocus()
+                handled = true
+            else if key = "down"
+                m.subRowIndex = (m.subRowIndex + 1) MOD 6
+                updateSubPanelFocus()
+                handled = true
+            else if key = "left"
+                adjustSetting(m.subRowIndex, -1)
+                handled = true
+            else if key = "right"
+                adjustSetting(m.subRowIndex, 1)
+                handled = true
+            else if key = "OK" or key = "select"
+                if m.subRowIndex = 3
+                    ' Reset subtitle sync offset
+                    m.subtitleOffset = 0.0
+                    updateSubPanelRows()
+                    if m.isShowingSample
+                        sampleText = "[ Subtitle Preview - Audio Sync 0.0s ]"
+                        m.subtitleLabel.text = sampleText
+                        m.subtitleShadow.text = sampleText
+                    end if
+                else if m.subRowIndex = 5
+                    ' Done button
+                    closeSubPanel()
+                else
+                    ' Tapping OK on track/size/color cycles forward
+                    adjustSetting(m.subRowIndex, 1)
+                end if
+                handled = true
+            else if key = "back"
+                closeSubPanel()
+                handled = true
+            end if
         end if
+
     end if
 
     return handled
